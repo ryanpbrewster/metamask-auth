@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>My Application</title>
+        <style>
+            .column {
+                display: flex;
+                flex-direction: column;
+            }
+            .row {
+                display: flex;
+                flex-direction: row;
+            }
+            .address {
+                background: lightgray;
+            }
+            .raw-token {
+                border: 1px solid black;
+                font-family: monospace;
+                font-size: 20px;
+                padding: 4px;
+                overflow-wrap: break-word;
+                width: 600px;
+                height: 600px;
+            }
+            .parsed-token {
+                border: 1px solid black;
+                font-family: monospace;
+                font-size: 20px;
+                padding: 4px;
+                width: 600px;
+                height: 600px;
+                overflow-x: scroll;
+                white-space: pre;
+            }
+            .header {
+                color: #fb015b;
+            }
+            .payload {
+                color: #d63aff;
+            }
+            .signature {
+                color: #00b9f1;
+            }
+        </style>
+    </head>
+    <body>
+        <script src="https://unpkg.com/mithril/mithril.js"></script>
+        <script>
+        const eth = window.ethereum;
+        function storageKey(address) {
+            return `metamask_auth.${address}`;
+        }
+        function parseToken(token) {
+            const [header, payload, signature] = token.split('.');
+            try {
+                return [
+                    {raw: header, parsed: JSON.parse(atob(header))},
+                    {raw: payload, parsed: JSON.parse(atob(payload))},
+                    signature,
+                ];
+            } catch (err) {
+                console.error(err);
+                return null;
+            }
+        }
+        const MetamaskNotFound = {
+            view: () => m("h1", "Metamask not found"),
+        };
+        function App() {
+            async function refreshToken(addr) {
+                const header = JSON.stringify({
+                    typ: "JWT",
+                    alg: "TODO",
+                });
+                const payload = JSON.stringify({
+                    iat: Date.now(),
+                });
+                const body = `${btoa(header)}.${btoa(payload)}`;
+                const signature = await eth.request({
+                    method: "personal_sign",
+                    params: [body, addr],
+                });
+                localStorage.setItem(storageKey(addr), `${body}.${signature}`);
+                m.redraw();
+            }
+            async function removeToken(addr) {
+                localStorage.removeItem(storageKey(addr));
+                m.redraw();
+            }
+            async function verifyToken(token) {
+                const resp = await fetch("https://localhost:8080/hello", {
+                    method: "POST",
+                    headers: {
+                        "Authentication": `Bearer ${token}`,
+                    }
+                });
+                console.log(resp);
+            }
+            let connected = null;
+            function handleAccounts(addresses) {
+                console.log("accounts changed: ", addresses);
+                connected = addresses?.[0];
+                m.redraw();
+            }
+            return {
+                oninit: async () => {
+                    eth.on("accountsChanged", handleAccounts);
+                    handleAccounts(await eth.request({ method: "eth_accounts" }));
+                },
+                onremove: async () => {
+                    eth.removeListener("accountsChanged", handleAccounts);
+                },
+                view: () => {
+                    if (!connected) {
+                        return m("button", {
+                            onclick: () => eth.request({ method: "eth_requestAccounts" }),
+                        }, "Connect w/ Metamask")
+                    }
+                    const token = localStorage.getItem(storageKey(connected));
+                    const parsed = token ? parseToken(token) : null;
+                    if (!parsed) {
+                        return m("div", [
+                            m("p", ['Connected as ', m("code", {class:"address"}, connected)]),
+                            m("button", {
+                                onclick: () => refreshToken(connected),
+                            }, "Sign in"),
+                        ]);
+                    }
+                    const [header, payload, signature] = parsed;
+                    return m("div", {class: "column"}, [
+                        m("p", `Signed in as ${connected}`),
+                        m("div", {class:"row"}, [
+                            m("button", {
+                                onclick: () => verifyToken(token),
+                            }, "Verify token"),
+                            m("button", {
+                                onclick: () => refreshToken(connected),
+                            }, "Refresh token"),
+                            m("button", {
+                                onclick: () => removeToken(connected),
+                            }, "Sign out"),
+                        ]),
+                        m("div", {class:"row"}, [
+                            m("div", {class: "raw-token"}, [
+                                m("span", {class: "header"}, header.raw),
+                                '.',
+                                m("span", {class:"payload"}, payload.raw),
+                                '.',
+                                m("span", {class:"signature"}, signature),
+                            ]),
+                            m("div", {class: "parsed-token"}, JSON.stringify([header.parsed, payload.parsed], null, 2)),
+                        ]),
+                    ]);
+                },
+            };
+        };
+        m.mount(document.body, eth ? App : MetamaskNotFound);
+        </script>
+    </body>
+</html>
