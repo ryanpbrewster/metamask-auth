@@ -1,17 +1,15 @@
-use warp::Filter;
 use serde::Deserialize;
+use warp::Filter;
 
 #[tokio::main]
 async fn main() {
     let hello = warp::any()
         .and(warp::header("authorization"))
-        .map(|header: String| {
-            match verify_auth(&header) {
-                Ok(_) => warp::reply::with_status("ok", warp::http::StatusCode::OK),
-                Err(err) => {
-                    eprintln!("{}", err);
-                    warp::reply::with_status("invalid", warp::http::StatusCode::BAD_REQUEST)
-                }
+        .map(|header: String| match verify_auth(&header) {
+            Ok(addr) => warp::reply::with_status(addr, warp::http::StatusCode::OK),
+            Err(err) => {
+                eprintln!("{}", err);
+                warp::reply::with_status("invalid".to_owned(), warp::http::StatusCode::BAD_REQUEST)
             }
         });
 
@@ -19,14 +17,19 @@ async fn main() {
 }
 
 fn verify_auth(header: &str) -> anyhow::Result<String> {
-    let auth: AuthRequest = serde_json::from_str(header)?;
-    Ok(verify_signature(&auth.message, &auth.signature)?)
+    println!("parsing header {}", header);
+    let raw = header
+        .strip_prefix("Bearer ")
+        .ok_or_else(|| anyhow!("authorization header must start with Bearer"))?;
+    let decoded = base64::decode(raw)?;
+    let parsed: AuthRequest = serde_json::from_slice(&decoded)?;
+    Ok(verify_signature(&parsed.message, &parsed.signature)?)
 }
 
 #[derive(Deserialize)]
-struct AuthRequest {
-    message: String,
-    signature: String,
+struct AuthRequest<'a> {
+    message: &'a str,
+    signature: &'a str,
 }
 
 use anyhow::anyhow;
