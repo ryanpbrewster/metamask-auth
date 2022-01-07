@@ -16,33 +16,22 @@
             .address {
                 background: lightgray;
             }
-            .raw-token {
+            .box {
                 border: 1px solid black;
-                font-family: monospace;
                 font-size: 20px;
                 padding: 4px;
+                margin: 4px;
+                width: 800px;
+                height: 300px;
+            }
+            .box-header {
+                border-bottom: solid 1px black;
+            }
+            .codeblock {
+                font-family: monospace;
+                font-size: 20px;
                 overflow-wrap: break-word;
-                width: 600px;
-                height: 600px;
-            }
-            .parsed-token {
-                border: 1px solid black;
-                font-family: monospace;
-                font-size: 20px;
-                padding: 4px;
-                width: 600px;
-                height: 600px;
-                overflow-x: scroll;
-                white-space: pre;
-            }
-            .header {
-                color: #fb015b;
-            }
-            .payload {
-                color: #d63aff;
-            }
-            .signature {
-                color: #00b9f1;
+                white-space: break-spaces;
             }
         </style>
     </head>
@@ -53,38 +42,27 @@
         function storageKey(address) {
             return `metamask_auth.${address}`;
         }
-        function parseToken(token) {
-            const [header, payload, signature] = token.split('.');
-            try {
-                return [
-                    {raw: header, parsed: JSON.parse(atob(header))},
-                    {raw: payload, parsed: JSON.parse(atob(payload))},
-                    signature,
-                ];
-            } catch (err) {
-                console.error(err);
-                return null;
-            }
-        }
         const MetamaskNotFound = {
             view: () => m("h1", "Metamask not found"),
         };
         function App() {
-            async function refreshToken(addr) {
-                const header = JSON.stringify({
-                    typ: "JWT",
-                    alg: "TODO",
-                });
-                const payload = JSON.stringify({
-                    iat: Date.now(),
-                });
-                const body = `${btoa(header)}.${btoa(payload)}`;
+            async function generateToken(addr) {
+                const payload = `Authenticating for metamask-app.example.com @ ${Date.now()}`;
                 const signature = await eth.request({
                     method: "personal_sign",
-                    params: [body, addr],
+                    params: [payload, addr],
                 });
-                localStorage.setItem(storageKey(addr), `${body}.${signature}`);
+                localStorage.setItem(storageKey(addr), JSON.stringify({payload, signature}));
                 m.redraw();
+            }
+            function parseToken(token) {
+                try {
+                    const parsed = JSON.parse(token);
+                    return 'payload' in parsed && 'signature' in parsed ? parsed : null;
+                } catch (err) {
+                    console.error(err);
+                    return null;
+                }
             }
             async function removeToken(addr) {
                 localStorage.removeItem(storageKey(addr));
@@ -121,37 +99,34 @@
                     }
                     const token = localStorage.getItem(storageKey(connected));
                     const parsed = token ? parseToken(token) : null;
-                    if (!parsed) {
+                    if (!token) {
                         return m("div", [
                             m("p", ['Connected as ', m("code", {class:"address"}, connected)]),
                             m("button", {
-                                onclick: () => refreshToken(connected),
-                            }, "Sign in"),
+                                onclick: () => generateToken(connected),
+                            }, "Generate token"),
                         ]);
                     }
-                    const [header, payload, signature] = parsed;
                     return m("div", {class: "column"}, [
-                        m("p", `Signed in as ${connected}`),
+                        m("p", ['Connected as ', m("code", {class:"address"}, connected)]),
                         m("div", {class:"row"}, [
                             m("button", {
                                 onclick: () => verifyToken(token),
-                            }, "Verify token"),
+                            }, "Sign in"),
                             m("button", {
-                                onclick: () => refreshToken(connected),
-                            }, "Refresh token"),
+                                onclick: () => generateToken(connected),
+                            }, "Regenerate token"),
                             m("button", {
                                 onclick: () => removeToken(connected),
-                            }, "Sign out"),
+                            }, "Remove token"),
                         ]),
-                        m("div", {class:"row"}, [
-                            m("div", {class: "raw-token"}, [
-                                m("span", {class: "header"}, header.raw),
-                                '.',
-                                m("span", {class:"payload"}, payload.raw),
-                                '.',
-                                m("span", {class:"signature"}, signature),
-                            ]),
-                            m("div", {class: "parsed-token"}, JSON.stringify([header.parsed, payload.parsed], null, 2)),
+                        m("div", {class: "box"}, [
+                            m("div", {class: "box-header"}, "Payload"),
+                            m("pre", {class:"codeblock"}, parsed.payload),
+                        ]),
+                        m("div", {class: "box"}, [
+                            m("div", {class: "box-header"}, "Signature"),
+                            m("pre", {class:"codeblock"}, parsed.signature),
                         ]),
                     ]);
                 },
