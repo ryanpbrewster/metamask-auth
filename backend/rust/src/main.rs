@@ -4,20 +4,33 @@ use warp::Filter;
 #[tokio::main]
 async fn main() {
     let hello = warp::any()
-        .and(warp::header("authorization"))
-        .map(|header: String| match verify_auth(&header) {
-            Ok(addr) => warp::reply::with_status(addr, warp::http::StatusCode::OK),
-            Err(err) => {
-                eprintln!("{}", err);
-                warp::reply::with_status("invalid".to_owned(), warp::http::StatusCode::BAD_REQUEST)
-            }
-        });
+        .and(warp::filters::header::optional(
+            warp::http::header::AUTHORIZATION.as_str(),
+        ))
+        .map(
+            |header: Option<String>| match verify_auth(&header.unwrap_or_default()) {
+                Ok(addr) => warp::reply::with_status(addr, warp::http::StatusCode::OK),
+                Err(err) => {
+                    eprintln!("{}", err);
+                    warp::reply::with_status(
+                        "invalid".to_owned(),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    )
+                }
+            },
+        )
+        .with(
+            warp::cors()
+                .allow_any_origin()
+                .allow_method("POST")
+                .allow_header(warp::http::header::AUTHORIZATION.as_str()),
+        );
 
     warp::serve(hello).run(([127, 0, 0, 1], 3030)).await;
 }
 
 fn verify_auth(header: &str) -> anyhow::Result<String> {
-    println!("parsing header {}", header);
+    println!("checking header: {}", header);
     let raw = header
         .strip_prefix("Bearer ")
         .ok_or_else(|| anyhow!("authorization header must start with Bearer"))?;

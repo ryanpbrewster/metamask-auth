@@ -47,18 +47,18 @@
         };
         function App() {
             async function generateToken(addr) {
-                const payload = `Authenticating for metamask-app.example.com @ ${Date.now()}`;
+                const message = `Authenticating for metamask-app.example.com @ ${Date.now()}`;
                 const signature = await eth.request({
                     method: "personal_sign",
-                    params: [payload, addr],
+                    params: [message, addr],
                 });
-                localStorage.setItem(storageKey(addr), JSON.stringify({payload, signature}));
+                localStorage.setItem(storageKey(addr), btoa(JSON.stringify({message, signature})));
                 m.redraw();
             }
             function parseToken(token) {
                 try {
-                    const parsed = JSON.parse(token);
-                    return 'payload' in parsed && 'signature' in parsed ? parsed : null;
+                    const parsed = JSON.parse(atob(token));
+                    return 'message' in parsed && 'signature' in parsed ? parsed : null;
                 } catch (err) {
                     console.error(err);
                     return null;
@@ -69,10 +69,10 @@
                 m.redraw();
             }
             async function verifyToken(token) {
-                const resp = await fetch("https://localhost:8080/hello", {
+                const resp = await fetch("http://localhost:3030/hello", {
                     method: "POST",
                     headers: {
-                        "Authentication": `Bearer ${token}`,
+                        "Authorization": `Bearer ${token}`,
                     }
                 });
                 console.log(resp);
@@ -99,7 +99,7 @@
                     }
                     const token = localStorage.getItem(storageKey(connected));
                     const parsed = token ? parseToken(token) : null;
-                    if (!token) {
+                    if (!parsed) {
                         return m("div", [
                             m("p", ['Connected as ', m("code", {class:"address"}, connected)]),
                             m("button", {
@@ -121,8 +121,8 @@
                             }, "Remove token"),
                         ]),
                         m("div", {class: "box"}, [
-                            m("div", {class: "box-header"}, "Payload"),
-                            m("pre", {class:"codeblock"}, parsed.payload),
+                            m("div", {class: "box-header"}, "Message"),
+                            m("pre", {class:"codeblock"}, parsed.message),
                         ]),
                         m("div", {class: "box"}, [
                             m("div", {class: "box-header"}, "Signature"),
