@@ -1,42 +1,38 @@
+use anyhow::anyhow;
 use serde::Deserialize;
-use warp::Filter;
+use warp::{filters, http::header, hyper::StatusCode, reply::with_status, Filter};
 
 #[tokio::main]
 async fn main() {
-    let hello = warp::any()
-        .and(warp::filters::header::optional(
-            warp::http::header::AUTHORIZATION.as_str(),
-        ))
-        .map(
-            |header: Option<String>| match verify_auth(&header.unwrap_or_default()) {
-                Ok(addr) => warp::reply::with_status(addr, warp::http::StatusCode::OK),
-                Err(err) => {
-                    eprintln!("{}", err);
-                    warp::reply::with_status(
-                        "invalid".to_owned(),
-                        warp::http::StatusCode::BAD_REQUEST,
-                    )
-                }
-            },
-        )
+    let handler = warp::any()
+        .and(filters::header::optional(header::AUTHORIZATION.as_str()))
+        .map(auth_handler)
         .with(
             warp::cors()
                 .allow_any_origin()
                 .allow_method("POST")
-                .allow_header(warp::http::header::AUTHORIZATION.as_str()),
+                .allow_header(header::AUTHORIZATION.as_str()),
         );
 
-    warp::serve(hello).run(([127, 0, 0, 1], 3030)).await;
+    warp::serve(handler).run(([127, 0, 0, 1], 3030)).await;
 }
 
-fn verify_auth(header: &str) -> anyhow::Result<String> {
-    println!("checking header: {}", header);
+fn auth_handler(auth: Option<String>) -> impl warp::Reply {
+    match verify_auth(auth.as_deref()) {
+        Ok(addr) => with_status(addr, StatusCode::OK),
+        Err(err) => with_status(format!("invalid: {}", err), StatusCode::BAD_REQUEST),
+    }
+}
+
+fn verify_auth(auth: Option<&str>) -> anyhow::Result<String> {
+    println!("checking header: {:?}", auth);
+    let header = auth.ok_or_else(|| anyhow!("no auth"))?;
     let raw = header
         .strip_prefix("Bearer ")
         .ok_or_else(|| anyhow!("authorization header must start with Bearer"))?;
     let decoded = base64::decode(raw)?;
     let parsed: AuthRequest = serde_json::from_slice(&decoded)?;
-    Ok(verify_signature(&parsed.message, &parsed.signature)?)
+    verify_signature(&parsed.message, &parsed.signature)
 }
 
 #[derive(Deserialize)]
@@ -45,7 +41,6 @@ struct AuthRequest<'a> {
     signature: &'a str,
 }
 
-use anyhow::anyhow;
 use secp256k1::{
     recovery::{RecoverableSignature, RecoveryId},
     Message, PublicKey, Secp256k1,
