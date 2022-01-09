@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -47,12 +50,36 @@ func authHandler(header string) (string, error) {
 	if err := json.Unmarshal(decoded, &parsed); err != nil {
 		return "", err
 	}
+	if err := verifyChallenge(parsed.Message); err != nil {
+		return "", err
+	}
 	return extractAddress(parsed.Message, parsed.Signature)
 }
 
 type authRequest struct {
 	Message   string `json:"message"`
 	Signature string `json:"signature"`
+}
+
+var validChallenge = regexp.MustCompile(`^Authenticating for metamask-app.example.com @ ([0-9]+)$`)
+
+func verifyChallenge(challenge string) error {
+	match := validChallenge.FindStringSubmatch(challenge)
+	if match == nil {
+		return fmt.Errorf("challenge must match %q", validChallenge)
+	}
+	signedAt, err := strconv.ParseInt(match[1], 10, 0)
+	if err != nil {
+		return err
+	}
+	age := time.Since(time.UnixMilli(signedAt))
+	if age < 0 {
+		return fmt.Errorf("challenge is from the future: %s", -age)
+	}
+	if age > 24*time.Hour {
+		return fmt.Errorf("challenge is too old: %s", age)
+	}
+	return nil
 }
 
 func extractAddress(challenge string, signature string) (string, error) {
