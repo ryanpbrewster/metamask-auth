@@ -50,14 +50,16 @@ pub fn verify_signature(challenge: &str, signature: &str) -> anyhow::Result<Stri
     if !signature.starts_with("0x") || signature.len() != 132 {
         return Err(anyhow!("signature must start with 0x and be 65 bytes"));
     }
-    let signature = &hex::decode(&signature[2..])?[..64];
+    let rawsig = &hex::decode(&signature[2..])?[..64];
 
     let secp = Secp256k1::verification_only();
-    let message: Message = message_hash(challenge);
-    let signature: RecoverableSignature =
-        RecoverableSignature::from_compact(signature, RecoveryId::from_i32(0)?)?;
-    let actual_pkey = secp.recover(&message, &signature)?;
-    Ok(public_key_address(actual_pkey))
+    let msg: Message = message_hash(challenge);
+    let sig: RecoverableSignature =
+        RecoverableSignature::from_compact(rawsig, RecoveryId::from_i32(0)?)?;
+    let pkey = secp.recover(&msg, &sig)?;
+    let address = public_key_address(pkey);
+    println!("Message: {}\nSignature: {}\nRecovered: {} => {}", challenge, signature, pkey, address);
+    Ok(address)
 }
 
 fn message_hash(msg: &str) -> Message {

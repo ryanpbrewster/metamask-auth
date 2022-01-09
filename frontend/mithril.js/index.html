@@ -75,7 +75,11 @@
                         "Authorization": `Bearer ${token}`,
                     }
                 });
-                console.log(resp);
+                if (resp.ok) {
+                    console.log('backend verified: ', await resp.text());
+                } else {
+                    console.error('backend rejected: ', await resp.text());
+                }
             }
             let connected = null;
             function handleAccounts(addresses) {
